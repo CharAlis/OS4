@@ -34,6 +34,7 @@ int ps()
 	char fields[24][128];
 	long total_size;
 	float total_cpu;
+	//MUST FIX: CPU + START
 	printf("PID\tPPID\tCPU\tSTATE\tSTART\tVSZ\tRSS\tPRIORITY\tCMDLINE\n");
 	while ((entry = readdir(directory)) != NULL)
 	{
