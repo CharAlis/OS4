@@ -114,6 +114,6 @@ void PrintStartTime(char *startTime)
 	fclose(fp);
 	curtime -= uptime;
 	curtime += (float)atoi(startTime)/_HZ_;
-	gmtime_r(&curtime, &tms);
-	printf("%d:%d", tms.tm_hour + 2, tms.tm_min);
+	localtime_r(&curtime, &tms);
+	printf("%02d:%02d", tms.tm_hour, tms.tm_min);
 }
