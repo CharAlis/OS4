@@ -26,7 +26,7 @@ int ps()
 	long int vsize;
 	char cmdline[128];
 	char fields[24][128];
-	long total_size = 0;
+	long total_size;
 	float total_cpu;
 	
 	directory = opendir("/proc");
