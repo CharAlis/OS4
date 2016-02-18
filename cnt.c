@@ -3,8 +3,7 @@
 #include <dirent.h>
 #include <sys/types.h>
 #include <string.h>
-
-int cnt(const char *dirName, int flg);
+#include "functions.h"
 
 int main(int argc, char const *argv[])
 {
@@ -65,7 +64,7 @@ int cnt(const char *dirName, int flg)
 	closedir(directory);
 	if (flg == 0)
 	{
-		n_dirs -= counter * 2;
+		n_dirs -= (counter + 1) * 2; //In order not to count the "." and ".." directories more than once
 		sum = n_rf + n_dirs + n_sl + n_np + n_cd + n_s + n_bdf;
 		printf("Number of regular files:\t%3d\t%3d%%\n", n_rf, (n_rf * 100)/sum);
 		printf("Number of directories:\t\t%3d\t%3d%%\n", n_dirs, (n_dirs * 100)/sum);

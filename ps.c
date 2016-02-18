@@ -5,12 +5,7 @@
 #include <string.h>
 #include <sys/times.h>
 #include <time.h>
-
-#define _HZ_ 100
-
-int ps();
-float ComputeCPUTime(char *time1, char *time2, char *time3, char* time4);
-void PrintStartTime(char *startTime);
+#include "functions.h"
 
 int main(int argc, char const *argv[])
 {
@@ -25,7 +20,6 @@ int ps()
 	DIR *directory;
 	int pid, i;
 	int ppid = getppid();
-	directory = opendir("/proc");
 	char path[128] = "/proc/";
 	char line[128];
 	char tmp[128];
@@ -34,6 +28,8 @@ int ps()
 	char fields[24][128];
 	long total_size;
 	float total_cpu;
+	
+	directory = opendir("/proc");
 	printf("PID\tPPID\tCPU\tSTATE\tSTART\tVSZ\tRSS\tPRIORITY\tCMDLINE\n");
 	while ((entry = readdir(directory)) != NULL)
 	{
@@ -83,13 +79,14 @@ int ps()
 			vsize = atol(fields[22]);
 			vsize /= 1000;
 			total_size += vsize;
-			printf("%s\t%s\t%4.2f\t%s\t", fields[0], fields[3], cpuTime , fields[2]);
+			printf("%s\t%s\t%4.2fs\t%s\t", fields[0], fields[3], cpuTime , fields[2]);
 			PrintStartTime(fields[21]);
 			printf("\t%ld\t%s\t%s\t\t%s\n", vsize, fields[23], fields[17], cmdline);
 			strcpy(path,"/proc/");
 			fclose(fp);
 		}
 	}
+	closedir(directory);
 	printf("---------------------------------\n");
 	printf("Total memory usage Kb: %ld\n", total_size);
 	printf("Total cpu time secs: %4.2f\n", total_cpu);
