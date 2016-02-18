@@ -95,7 +95,7 @@ int netstat(const char *arg)
 					{
 						while ((entry = readdir(process)) != NULL)	// access only content allowed
 						{
-							if ((entry->d_type == DT_LNK) && (atoi(entry->d_name) > 2))
+							if ((entry->d_type == DT_LNK) && (atoi(entry->d_name) > 2))	// We skip checking default input-output-error stream
 							{
 								inode = 0;
 								strncpy(temp, "", sizeof(temp));
@@ -108,8 +108,6 @@ int netstat(const char *arg)
 								if (!strncmp(temp, "socket", 6))
 								{
 									sscanf(temp, "socket:[%d]", &inode);
-									//printf("found socket '%s', it has inode of '%d'\n", temp, inode);
-									//printf("flagTCP : %d, flagUDP : %d\n", flagTCP, flagUDP);
 
 									if (flagTCP)
 									{
@@ -119,7 +117,7 @@ int netstat(const char *arg)
 										while (!feof(file))
 										{
 											fscanf(file, "%*s %s %s %*s %*s %*s %*s %*s %*s %d", laddress, raddress, &sinode);
-											//printf("laddress : '%s', raddress : '%s', sinode : '%d' \n", laddress, raddress, sinode);
+
 											if (inode == sinode)
 											{
 												int local_address, remote_address, local_port, remote_port;
@@ -141,7 +139,7 @@ int netstat(const char *arg)
 										while (!feof(file))
 										{
 											fscanf(file, "%*s %s %s %*s %*s %*s %*s %*s %*s %d", laddress, raddress, &sinode);
-											//printf("laddress : '%s', raddress : '%s', sinode : '%d' \n", laddress, raddress, sinode);
+
 											if (inode == sinode)
 											{
 												int local_address, remote_address, local_port, remote_port;
@@ -165,6 +163,7 @@ int netstat(const char *arg)
 	exit(EXIT_SUCCESS);
 }
 
+// Decodes hex representation of ip inside tcp/udp file to a huma-readable ip address
 char *decode_address(int int_address, char *address)
 {
 	sprintf(address, "%d.%d.%d.%d", (int_address & 0x000000FF), (int_address & 0x0000FF00) >> 8, (int_address & 0x00FF0000) >> 16, (int_address & 0xFF000000) >> 24);
