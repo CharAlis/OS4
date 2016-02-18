@@ -6,6 +6,9 @@
 #include <sys/times.h>
 #include <time.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <pwd.h>
+#include <grp.h>
 #include "functions.h"
 
 /*---------CNT-----------*/
@@ -74,9 +77,213 @@ int cnt(const char *dirName, int flg)
 	}
 	return 0;
 }
-
 /*---------CNT-----------*/
 
+/*---------LISTRW---------*/
+int listrw(const char *type, int flag, const char *strtime, const char *dir)
+{
+	struct dirent *entry;
+	struct stat stats;
+	DIR *directory;
+	char buffer[1024];
+	int i, flagLR = 0, flagLW = 0, flagType = 0, flagTime = 0, flagDir = 0, limdays = 0, limhours = 0, limmins = 0, limsecs = 0, typeflags[7];
+	time_t curtime = time(NULL);
+	long timediff = 0, days = 0, hours = 0, minutes = 0, seconds = 0, timelimit;
+
+	// Extracting time from arguments
+	char temp[16];
+	int init = 0, pos = 0, t = 0;
+	i = 0;
+	while (strtime[i] != '\0')
+	{
+		if (strtime[i] == '-') { i++; continue; }
+		if (strtime[i] >= '0' || strtime[i] <= '9') temp[t++] = strtime[i];
+		if (strtime[i] == 'd' || strtime[i] == 'h' || strtime[i] == 'm' || strtime[i] == 's')
+		{
+			temp[t] = '\0';
+			t = 0;
+			switch (strtime[i])
+			{
+				case 'd':
+					limdays = atoi(temp);
+					break;
+				case 'h':
+					limhours = atoi(temp);
+					break;
+				case 'm':
+					limmins = atoi(temp);
+					break;
+				case 's':
+					limsecs = atoi(temp);
+					break;
+			}
+		}
+		i++;
+	}
+	// Converting time limit to seconds
+	timelimit = limdays * (24 * 3600) + limhours * 3600 + limmins * 60 + limsecs;
+
+	// Extracting types (if types argument exists)
+	if (type == NULL) {
+		flagType = 0;
+	}
+	else
+	{
+		flagType = 1;
+		for (i = 0; i < 7; i++)
+			typeflags[i] = 0;
+
+		i = 0;
+		while (type[i] != '\0')
+		{
+			switch (type[i++])
+			{
+				case 'f':
+					typeflags[0]++;
+					break;
+				case 'd':
+					typeflags[1]++;
+					break;
+				case 'l':
+					typeflags[2]++;
+					break;
+				case 'p':
+					typeflags[3]++;
+					break;
+				case 'c':
+					typeflags[4]++;
+					break;
+				case 'b':
+					typeflags[5]++;
+					break;
+				case 's':
+					typeflags[6]++;
+					break;
+			}
+		}
+	}
+
+	// Executing command
+	directory = opendir(dir);
+	if (directory == NULL) { perror("opendir()"); exit(EXIT_FAILURE); }
+
+	while ((entry = readdir(directory)) != NULL)
+	{
+		switch (entry->d_type)
+		{
+			// regular files
+			case DT_REG:
+				if (flagType == 0 || typeflags[0])
+				{
+					check(dir, curtime, timelimit, flag, entry, &stats);
+				}
+				break;
+			// directories
+			case DT_DIR:
+				if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, ".."))
+				{
+					strcpy(buffer, dir);
+					strcat(buffer, "/");
+					strcat(buffer, entry->d_name);
+
+					if (stat(buffer, &stats) < 0)
+					{
+						perror("stat()");
+						exit(EXIT_FAILURE);
+					}
+					// printf("Getting stats of directory '%s'\n", buffer);
+
+					if (flag)
+						timediff = difftime(curtime, stats.st_mtime);
+					else
+						timediff = difftime(curtime, stats.st_atime);
+
+					if (timediff <= timelimit)
+					{
+						if (flagType == 0 || typeflags[1]) printf("%s\n", buffer);
+						listrw(type, flag, strtime, buffer);
+					}
+				}
+				break;
+			// symbolic links
+			case DT_LNK:
+				if (flagType == 0 || typeflags[2])
+				{
+					check(dir, curtime, timelimit, flag, entry, &stats);
+				}
+				break;
+			// pipes
+			case DT_FIFO:
+				if (flagType == 0 || typeflags[3])
+				{
+					check(dir, curtime, timelimit, flag, entry, &stats);
+				}
+				break;
+			// char devices
+			case DT_CHR:
+				if (flagType == 0 || typeflags[4])
+				{
+					check(dir, curtime, timelimit, flag, entry, &stats);
+				}
+				break;
+			// block devices
+			case DT_BLK:
+				if (flagType == 0 || typeflags[5])
+				{
+					check(dir, curtime, timelimit, flag, entry, &stats);
+				}
+				break;
+			// sockets
+			case DT_SOCK:
+				if (flagType == 0 || typeflags[6])
+				{
+					check(dir, curtime, timelimit, flag, entry, &stats);
+				}
+				break;
+		}
+	}
+	closedir(directory);
+
+	return 0;
+}
+
+// Finds the first occuring position of character c inside the string
+int findpos(const char *string, char c)
+{
+	int pos = 0;
+	while (string[pos] != '\0')
+	{
+		if (string[pos] == c) return pos;
+		pos++;
+	}
+	return -1;
+}
+
+// Checks to see if the last access or modification time is inside the time limit, and if it is, we print out the directory/file/link etc.
+void check(const char *dir, time_t curtime, long timelimit, int flag, struct dirent *entry, struct stat *pstats)
+{
+	char buffer[512];
+	int timediff;
+	struct stat stats = *pstats;
+
+	strcpy(buffer, dir);
+	strcat(buffer, "/");
+	strcat(buffer, entry->d_name);
+
+	if (stat(buffer, &stats) < 0)
+	{
+		perror("stat()");
+		exit(EXIT_FAILURE);
+	}
+
+	if (flag)
+		timediff = difftime(curtime, stats.st_mtime);
+	else
+		timediff = difftime(curtime, stats.st_atime);
+
+	if (timediff <= timelimit) printf("%s\n", buffer);
+}
+/*---------LISTRW---------*/
 
 /*---------PS-----------*/
 int ps()
@@ -181,6 +388,152 @@ void PrintStartTime(char *startTime)
 	printf("%02d:%02d", tms.tm_hour, tms.tm_min);
 }
 /*---------PS-----------*/
+
+/*---------FT---------*/
+int ft()
+{
+	struct stat stats;
+	struct dirent *procentry, *entry;
+	struct passwd  *pwd;
+	struct group   *grp;
+	FILE *file;
+	DIR *proc, *process;
+	long my_pid, my_ppid, my_uid, my_gid, target_pid, target_ppid;
+	char buffer[512], tmp[512], temp[512], permissions[11];
+	int count = 0, first, procnum;
+
+	my_pid = (long) getpid();
+	my_ppid = (long) getppid();
+
+	// Get uid, gid of our process
+	strcpy(buffer, "/proc/");
+	sprintf(temp, "%ld", my_pid);
+	strcat(buffer, temp);
+
+	if (stat(buffer, &stats) == -1)
+	{
+		perror("stat");
+		exit(EXIT_FAILURE);
+	}
+
+	my_uid = stats.st_uid;
+	my_gid = stats.st_gid;
+
+	// Start finding processes
+	proc = opendir("/proc");
+	while ((procentry = readdir(proc)) != NULL)
+	{
+		first = 1;
+		switch (procentry->d_type)
+		{
+			case DT_DIR:
+				if (sscanf(procentry->d_name, "%d", &procnum) < 1) break;	// Allow only entry in process folders
+				if (strcmp(procentry->d_name, ".") && strcmp(procentry->d_name, ".."))
+				{
+					strcpy(tmp, "/proc/");
+					strcat(tmp, procentry->d_name);
+
+					// Getting stats to verify process ownership of user
+					if (stat(tmp, &stats) == -1)
+					{
+						perror("stat");
+						exit(EXIT_FAILURE);
+					}
+
+					// Check if process originated from the same tty, skip self
+					strcpy(buffer, tmp);
+					strcat(buffer, "/stat");
+					file = fopen(buffer, "r");
+					fscanf(file, "%ld %*s %*c %ld", &target_pid, &target_ppid);
+					fclose(file);
+					if ((my_ppid != target_ppid) || (my_pid == target_pid)) continue;
+
+					// Make sure user id and group id match
+					if (stats.st_uid != my_uid || stats.st_gid != my_gid) break;
+
+					// Finding open files for process
+					strcat(tmp, "/fd");
+					// Checking all contents of fd folder
+					if ((process = opendir(tmp)) != NULL)
+					{
+						while ((entry = readdir(process)) != NULL)	// access only content allowed
+						{
+							if ((entry->d_type == DT_LNK) && (atoi(entry->d_name) > 2))	// if it is a link other than standard iput/output/error streams
+							{
+								strncpy(temp, "", sizeof(temp));
+								strcpy(buffer, tmp);
+								strcat(buffer, "/");
+								strcat(buffer, entry->d_name);
+								readlink(buffer, temp, sizeof(temp));	// path and file name
+
+								if (stat(buffer, &stats) == -1)
+								{
+									perror("stat");
+									exit(EXIT_FAILURE);
+								}
+								
+								// Each time we print for a new process, we print out its PID
+								if (first)
+								{
+									first = 0;
+									if (count) printf("\n");
+									printf("PID %ld\n", target_pid);
+								}
+
+								// Printing out results
+								convertmode(stats.st_mode, permissions);
+								if (((pwd = getpwuid(stats.st_uid)) != NULL) && ((grp = getgrgid(stats.st_gid)) != NULL))
+									printf("%10.10s %2d %-8.8s %-6.6s %4ld %s\n", permissions, (int)stats.st_nlink, pwd->pw_name, grp->gr_name, (long)stats.st_size, temp);
+								else
+									printf("%10.10s %2d %-8d %-6d %4ld %s\n", permissions, (int)stats.st_nlink, stats.st_uid, stats.st_gid, (long)stats.st_size, temp);
+								fflush(stdout);
+								count++;
+							}
+						}
+					}
+					closedir(process);
+				}
+				break;
+		}
+	}
+	closedir(proc);
+	if (count)
+		printf("-------------------\nTotal open files: %d\n", count);
+	exit(EXIT_SUCCESS);
+}
+
+// Converts st_mode to human readable format of drwxr-x--x
+void convertmode(int mode, char *perms)
+{
+	// leading char
+	if (S_ISDIR(mode))
+		perms[0] = 'd';
+	/*else if (S_ISCHR(mode))
+		perms[0] = 'c';
+	else if (S_ISBLK(mode))
+		perms[0] = 'b';
+	else if (S_ISFIFO(mode))
+		perms[0] = 'p';
+	else if (S_ISLNK(mode))
+		perms[0] = 'l';
+	else if (S_ISSOCK(mode))
+		perms[0] = 's';*/
+	else
+		perms[0] = '-';
+
+	// following chars
+	perms[1] = (mode & S_IRUSR) ? 'r' : '-';
+	perms[2] = (mode & S_IWUSR) ? 'w' : '-';
+	perms[3] = (mode & S_IXUSR) ? 'x' : '-';
+	perms[4] = (mode & S_IRGRP) ? 'r' : '-';
+	perms[5] = (mode & S_IWGRP) ? 'w' : '-';
+	perms[6] = (mode & S_IXGRP) ? 'x' : '-';
+	perms[7] = (mode & S_IROTH) ? 'r' : '-';
+	perms[8] = (mode & S_IWOTH) ? 'w' : '-';
+	perms[9] = (mode & S_IXOTH) ? 'x' : '-';
+	perms[10] = '\0';
+}
+/*---------FT---------*/
 
 /*---------IOSTAT-----------*/
 int iostat(int records, char *fieldname)
@@ -290,3 +643,161 @@ int cmprf (const void * a, const void * b) {
 int cmpwf (const void * a, const void * b) {
 	return ((*(ioinfo *)b).wfs - (*(ioinfo *)a).wfs); }
 /*---------IOSTAT-----------*/
+
+/*---------NETSTAT---------*/
+int netstat(const char *arg)
+{
+	struct stat stats;
+	struct dirent *procentry, *entry;
+	FILE *file;
+	DIR *proc, *process;
+	long my_pid, my_ppid, my_uid, my_gid, target_pid, target_ppid;
+	char buffer[512], tmp[512], temp[512], permissions[11], laddress[62], raddress[62];
+	int first, procnum, flagTCP = 1, flagUDP = 1, inode, sinode;
+
+	// Setting which sockets to check for
+	if (arg != NULL)
+	{
+		if (!strcmp(arg, "tcp"))
+			flagUDP = 0;
+		else
+			flagTCP = 0;
+	}
+
+	my_pid = (long) getpid();
+	my_ppid = (long) getppid();
+
+	// Get uid, gid of our process
+	strcpy(buffer, "/proc/");
+	sprintf(temp, "%ld", my_pid);
+	strcat(buffer, temp);
+
+	if (stat(buffer, &stats) == -1)
+	{
+		perror("stat");
+		exit(EXIT_FAILURE);
+	}
+
+	my_uid = stats.st_uid;
+	my_gid = stats.st_gid;
+
+	// Print first line
+	printf("%-9s  %-5s  %-12s  %-5s  %-12s %-5s\n", "PROTOCOL", "PID", "L-ADDRESS", "L-PORT", "R-ADDRESS", "R-PORT");
+
+	// Start finding processes
+	proc = opendir("/proc");
+	while ((procentry = readdir(proc)) != NULL)
+	{
+		first = 1;
+		switch (procentry->d_type)
+		{
+			case DT_DIR:
+				if (sscanf(procentry->d_name, "%d", &procnum) < 1) break;	// Allow only entry in process folders
+				if (strcmp(procentry->d_name, ".") && strcmp(procentry->d_name, ".."))
+				{
+					strcpy(tmp, "/proc/");
+					strcat(tmp, procentry->d_name);
+
+					// Getting stats to verify process ownership of user
+					if (stat(tmp, &stats) == -1)
+					{
+						perror("stat");
+						exit(EXIT_FAILURE);
+					}
+
+					// Check if process originated from the same tty, skip self
+					strcpy(buffer, tmp);
+					strcat(buffer, "/stat");
+					file = fopen(buffer, "r");
+					fscanf(file, "%ld %*s %*c %ld", &target_pid, &target_ppid);
+					fclose(file);
+					if ((my_ppid != target_ppid) || (my_pid == target_pid)) continue;
+
+					// Make sure user id and group id match
+					if (stats.st_uid != my_uid || stats.st_gid != my_gid) break;
+
+					// Finding open sockets for process
+					strcat(tmp, "/fd");
+					// Checking all contents of fd folder
+					if ((process = opendir(tmp)) != NULL)
+					{
+						while ((entry = readdir(process)) != NULL)	// access only content allowed
+						{
+							if ((entry->d_type == DT_LNK) && (atoi(entry->d_name) > 2))	// We skip checking default input-output-error stream
+							{
+								inode = 0;
+								strncpy(temp, "", sizeof(temp));
+								strcpy(buffer, tmp);
+								strcat(buffer, "/");
+								strcat(buffer, entry->d_name);
+								readlink(buffer, temp, sizeof(temp));
+
+								// If we have found a socket
+								if (!strncmp(temp, "socket", 6))
+								{
+									sscanf(temp, "socket:[%d]", &inode);	// We extract the inode number of the socket
+
+									if (flagTCP)
+									{
+										file = fopen("/proc/net/tcp", "r");
+										if (file == NULL) continue;
+
+										// We search in the list of active sockets, the one that matches to the inode we have
+										while (!feof(file))
+										{
+											fscanf(file, "%*s %s %s %*s %*s %*s %*s %*s %*s %d", laddress, raddress, &sinode);
+
+											if (inode == sinode)
+											{
+												int local_address, remote_address, local_port, remote_port;
+												char address[16];
+
+												sscanf(laddress, "%x:%x", &local_address, &local_port);
+												sscanf(raddress, "%x:%x", &remote_address, &remote_port);
+												printf("%-9s  %-5ld  %-12s  %-5d  %-12s %-5d\n", "TCP", target_pid, decode_address(local_address, address), local_port, decode_address(remote_address, address), remote_port);
+											}
+										}
+										fclose(file);
+									}
+
+									if (flagUDP)
+									{
+										file = fopen("/proc/net/udp", "r");
+										if (file == NULL) continue;
+
+										// We search in the list of active sockets, the one that matches to the inode we have
+										while (!feof(file))
+										{
+											fscanf(file, "%*s %s %s %*s %*s %*s %*s %*s %*s %d", laddress, raddress, &sinode);
+
+											if (inode == sinode)
+											{
+												int local_address, remote_address, local_port, remote_port;
+												char address[16];
+
+												sscanf(laddress, "%x:%x", &local_address, &local_port);
+												sscanf(raddress, "%x:%x", &remote_address, &remote_port);
+												printf("%-9s  %-5ld  %-12s  %-5d  %-12s %-5d\n", "UDP", target_pid, decode_address(local_address, address), local_port, decode_address(remote_address, address), remote_port);
+											}
+										}
+										fclose(file);
+									}
+								}
+							}
+						}
+					}
+				}
+				break;
+		}
+	}
+	closedir(proc);
+	exit(EXIT_SUCCESS);
+}
+
+// Decodes hex representation of ip inside tcp/udp file to a human-readable ip address
+char *decode_address(int int_address, char *address)
+{
+	sprintf(address, "%d.%d.%d.%d", (int_address & 0x000000FF), (int_address & 0x0000FF00) >> 8, (int_address & 0x00FF0000) >> 16, (int_address & 0xFF000000) >> 24);
+	return address;
+}
+/*---------NETSTAT---------*/
